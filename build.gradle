@@ -1,0 +1,27 @@
+apply plugin: "jetty"
+apply plugin: "war"
+apply plugin: "idea"
+
+task wrapper(type: Wrapper) {
+    gradleVersion = "3.5.1"
+}
+
+repositories {
+    mavenCentral()
+
+    maven {
+        url "http://h2o-release.s3.amazonaws.com/h2o/rel-vajda/4/maven/repo/"
+    }
+}
+
+dependencies {
+    compile "javax.servlet:servlet-api:2.5"
+    compile "ai.h2o:h2o-genmodel:3.10.5.4"
+}
+
+war {
+    archiveName = "ROOT.war"
+}
+
+jettyRunWar.contextPath = ""
+
