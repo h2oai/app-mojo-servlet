@@ -1,3 +1,4 @@
 app-mojo-servlet.*
+src/main/resources/regression_model.zip
 build
 .gradle
