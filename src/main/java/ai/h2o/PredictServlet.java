@@ -10,16 +10,17 @@ import javax.servlet.*;
 import hex.genmodel.ModelMojoReader;
 import hex.genmodel.MojoReaderBackend;
 import hex.genmodel.MojoReaderBackendFactory;
+import hex.genmodel.easy.prediction.BinomialModelPrediction;
 import hex.genmodel.easy.prediction.RegressionModelPrediction;
 import hex.genmodel.easy.*;
 
-public class PredictRegressionServlet extends HttpServlet {
+public class PredictServlet extends HttpServlet {
   // Set to true for demo mode (to print the predictions to stdout).
   // Set to false to get better throughput.
   private static final boolean VERBOSE = true;
 
   private static EasyPredictModelWrapper loadMojo(String name) {
-    URL mojoUrl = PredictRegressionServlet.class.getResource(name);
+    URL mojoUrl = PredictServlet.class.getResource(name);
     try {
       MojoReaderBackend r = MojoReaderBackendFactory.createReaderBackend(mojoUrl, MojoReaderBackendFactory.CachingStrategy.MEMORY);
       return new EasyPredictModelWrapper(ModelMojoReader.readFrom(r));
@@ -28,10 +29,10 @@ public class PredictRegressionServlet extends HttpServlet {
     }
   }
 
-  private static EasyPredictModelWrapper regressionModel;
+  private static EasyPredictModelWrapper model;
 
   static {
-    regressionModel = loadMojo("/regression_model.zip");
+    model = loadMojo("/model.zip");
   }
 
   @SuppressWarnings("unchecked")
@@ -52,7 +53,7 @@ public class PredictRegressionServlet extends HttpServlet {
   }
 
   private RegressionModelPrediction predictRegression (RowData row) throws Exception {
-    return regressionModel.predictRegression(row);
+    return model.predictRegression(row);
   }
 
   private String createJsonResponse(RegressionModelPrediction p) {
@@ -64,19 +65,63 @@ public class PredictRegressionServlet extends HttpServlet {
     return sb.toString();
   }
 
+  private BinomialModelPrediction predictBinomial (RowData row) throws Exception {
+    return model.predictBinomial(row);
+  }
+
+  private String createJsonResponse(BinomialModelPrediction p) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("{\n");
+    sb.append("  \"labelIndex\" : ").append(p.labelIndex).append(",\n");
+    sb.append("  \"label\" : \"").append(p.label).append("\",\n");
+    sb.append("  \"classProbabilities\" : ").append("[\n");
+    for (int i = 0; i < p.classProbabilities.length; i++) {
+      double d = p.classProbabilities[i];
+      if (Double.isNaN(d)) {
+        throw new RuntimeException("Probability is NaN");
+      }
+      else if (Double.isInfinite(d)) {
+        throw new RuntimeException("Probability is infinite");
+      }
+
+      sb.append("    ").append(d);
+      if (i != (p.classProbabilities.length - 1)) {
+        sb.append(",");
+      }
+      sb.append("\n");
+    }
+    sb.append("  ]\n");
+    sb.append("}\n");
+
+    return sb.toString();
+  }
+
   public void doGet (HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
     RowData row = new RowData();
     fillRowDataFromHttpRequest(request, row);
 
     try {
-      RegressionModelPrediction p = predictRegression(row);
-      String s = createJsonResponse(p);
+      String s;
+      switch (model.getModelCategory()) {
+        case Regression: {
+          RegressionModelPrediction p = predictRegression(row);
+          s = createJsonResponse(p);
+          if (VERBOSE) System.out.println("prediction(regression value): " + p.value);
+          break;
+        }
+        case Binomial: {
+          BinomialModelPrediction p = predictBinomial(row);
+          s = createJsonResponse(p);
+          if (VERBOSE) System.out.println("prediction(binomial p[1]: " + p.classProbabilities[1]);
+          break;
+        }
+        default:
+          throw new RuntimeException("Unhandled model category");
+      }
 
       // Emit the prediction to the servlet response.
       response.getWriter().write(s);
       response.setStatus(HttpServletResponse.SC_OK);
-
-      if (VERBOSE) System.out.println("prediction(regression value): " + p.value);
     }
     catch (Exception e) {
       // Prediction failed.
